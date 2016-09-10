@@ -59,12 +59,131 @@ MyImage & MyImage::operator= (const MyImage &otherImage)
 
 }
 
+
+void rotate_point(float cx, float cy, float angle, float *newx, float *newy)
+{
+	float s = sin(angle);
+	float c = cos(angle);
+
+	// translate point back to origin:
+	*newx -= cx;
+	*newy -= cy;
+
+	// rotate point
+	float xnew = *newx * c - *newy * s;
+	float ynew = *newx * s + *newy * c;
+
+	// translate point back:
+	*newx = xnew + cx;
+	*newy = ynew + cy;
+}
+
+
+void draw_helper(char *Data, int x1, int y1, int x2, int y2, int Width, int Height) {
+	int start_x = x1, start_y = y1, end_x = x2, end_y = y2;
+	int dx = x2 - x1;
+	int dy = y2 - y1;
+	double slope = 0;
+
+	bool anchor_x;
+	if (dx != 0) slope = dy / (double)dx;
+
+	if (abs(slope) <= 1 && dx != 0) {
+		anchor_x = true;
+		if (dx < 0) {
+			start_x = x2;
+			start_y = y2;
+			end_x = x1;
+			end_y = y1;
+		}
+		slope = (end_y - start_y) / (double)(end_x - start_x);
+	}
+	else {
+		anchor_x = false;
+		if (dy < 0) {
+			start_x = x2;
+			start_y = y2;
+			end_x = x1;
+			end_y = y1;
+		}
+		if (dx == 0) { slope = 0; }
+		else { slope = (end_x - start_x) / (double)(end_y - start_y); }
+	}
+
+	// set starting point to zero first
+	Data[start_y*Width * 3 + start_x * 3] = 0;
+	Data[start_y*Width * 3 + start_x * 3 + 1] = 0;
+	Data[start_y*Width * 3 + start_x * 3 + 2] = 0;
+
+	if (anchor_x) {
+		double y = start_y + 0.5;
+		for (int x = start_x + 1; x <= end_x; x++) {
+			y = y + slope;
+			int int_y = (int)floor(y);
+			Data[int_y*Width * 3 + x * 3] = 0;
+			Data[int_y*Width * 3 + x * 3 + 1] = 0;
+			Data[int_y*Width * 3 + x * 3 + 2] = 0;
+		}
+	}
+	else {
+		double x = start_x + 0.5;
+		for (int y = start_y + 1; y <= end_y; y++) {
+			x = x + slope;
+			int int_x = (int)floor(x);
+			Data[y*Width * 3 + int_x * 3] = 0;
+			Data[y*Width * 3 + int_x * 3 + 1] = 0;
+			Data[y*Width * 3 + int_x * 3 + 2] = 0;
+		}
+	}
+}
+
+void slope (float x1, float y1, float x2, float y2, float *m, float *c) {
+	float dx, dy;
+	dx = x2 - x1;
+	dy = y2 - y1;
+
+	if (dx == 0)
+		dx = 1;
+	*m = dy / dx;
+	*c = y1 - (*m) * x1;
+}
+
+void intersection(float x1, float y1, float x2, float y2, float *newx, float *newy)
+{
+	float m1, c1, m2, c2;
+	float lx1, ly1, lx2, ly2;
+
+	for (int i = 0; i < 4; i++) {
+		if (i == 0) {
+			lx1 = 255; ly1 = 0; lx2 = 256; ly2 = 256;
+		} else if (i == 1) {
+			lx1 = 0; ly1 = 255; lx2 = 256; ly2 = 256;
+		} else if (i == 2) {
+			lx1 = 0; ly1 = 0; lx2 = 1, ly2 = 256;
+		} else {
+			lx1 = 0, ly1 = 0; lx2 = 256, ly2 = 1;
+		}
+
+		slope (lx1, ly1, lx2, ly2, &m1, &c1);
+		slope (x1, y1, x2, y2, &m2, &c2);
+
+		if ((m1 - m2) != 0) {
+			*newx = (c2 - c1) / (m1 - m2);
+			*newy = m1 * (*newx) + c1;
+			break;
+		}
+	}
+}
+
+
 // MyImage::CreatImageCanv
 // Function to create white image with two dots connected
 bool MyImage::CreatImageCanv()
 {	
 	// Allocate Data structure and copy
 	Data = new char[Width*Height*3];
+	float x1, y1, x2, y2;
+
 	for (int i = 0; i < Height*Width; i++)
 	{
 		Data[3*i]	= 255;
@@ -73,64 +192,24 @@ bool MyImage::CreatImageCanv()
 	}
 
 	// two coordinates to connect a line, x is for height, y is for row
-    int x1 = 200, y1 = 400;
-    int x2 = 10, y2 = 200;
+	int width = Width;
+	int height = Height;
 
-    int start_x = x1, start_y = y1, end_x = x2, end_y = y2;
-    int dx = x2 - x1;
-    int dy = y2 - y1;
-    double slope = 0;
+	x1 = 128;  y1 = 128; x2 = 255; y2 = 0;
+	for (int i = 45; i < 360; i += 45) {
+		float radian = 0.01746031746 * i;
+		draw_helper(Data, x1, y1, x2, y2, width, height);
+		x1 = 128;  y1 = 128; x2 = 255; y2 = 0;
+		rotate_point(x1, x2, radian, &x2, &y2);
+		intersection(x1, y1, x2, y2, &x2, &y2);
+		if (x2 < 0 || y2 < 0)
+			break;
+		if (x2 > 255)
+			x2 = 255;
+		if (y2 > 255)
+			y2 = 255;
+	}
     
-    bool anchor_x;
-    if(dx != 0) slope = dy/(double)dx;
-
-	if(abs(slope) <= 1 && dx !=0) {
-    	anchor_x = true;
-    	if(dx < 0) {
-    		start_x = x2;
-    		start_y = y2;
-    		end_x = x1;
-    		end_y = y1;
-    	}
-    	slope = (end_y - start_y)/(double)(end_x - start_x);
-    }
-    else {
-    	anchor_x = false;
-    	if(dy < 0) {
-    		start_x = x2;
-    		start_y = y2;
-    		end_x = x1;
-    		end_y = y1;
-    	}
-    	if(dx == 0) {slope = 0;}
-    	else {slope = (end_x - start_x)/(double)(end_y - start_y);}
-    }
-
-	// set starting point to zero first
-	Data[start_y*Width*3 + start_x*3] = 0;
-	Data[start_y*Width*3 + start_x*3 + 1] = 0;
-	Data[start_y*Width*3 + start_x*3 + 2] = 0;
-	
-	if(anchor_x) {
-		double y = start_y + 0.5;
-		for(int x = start_x + 1; x <= end_x; x++) {
-			y = y + slope;
-			int int_y = (int)floor(y);
-			Data[int_y*Width*3 + x*3] = 0;
-			Data[int_y*Width*3 + x*3 + 1] = 0;
-			Data[int_y*Width*3 + x*3 + 2] = 0;
-		}
-	}
-	else {
-		double x = start_x + 0.5;
-		for(int y = start_y + 1; y <= end_y; y++) {
-			x = x + slope;
-			int int_x = (int)floor(x);
-			Data[y*Width*3 + int_x*3] = 0;
-			Data[y*Width*3 + int_x*3 + 1] = 0;
-			Data[y*Width*3 + int_x*3 + 2] = 0;
-		}
-	}
 	return true;
 }
 
